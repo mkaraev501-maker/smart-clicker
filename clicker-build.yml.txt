@@ -1,0 +1,59 @@
+name: Build Clicker APK
+
+on:
+  push:
+    paths:
+      - "clicker.zip"
+      - ".github/workflows/clicker-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Unzip project
+        run: |
+          mkdir -p project
+          unzip -q -o clicker.zip -d project
+          S=$(find project -name settings.gradle.kts | head -1)
+          echo "PROJECT_DIR=$(dirname "$S")" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        run: |
+          cd "$PROJECT_DIR"
+          set +e
+          gradle assembleDebug --no-daemon --stacktrace > build.log 2>&1
+          CODE=$?
+          echo "=========== КРАТКО ОБ ОШИБКАХ ==========="
+          grep -E "^e: |^w: .*(Unresolved|error)|What went wrong|Execution failed|SDK location|error:" build.log | cut -c1-230 | head -40
+          echo "=========== ПОДРОБНЕЕ ==========="
+          grep -A8 "What went wrong" build.log | cut -c1-230 | head -40
+          echo "=========== КОНЕЦ, код $CODE ==========="
+          exit $CODE
+
+      - name: Save APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clicker-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: clicker-${{ github.run_number }}
+          name: Clicker build ${{ github.run_number }}
+          files: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
